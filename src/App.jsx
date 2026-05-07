@@ -1,4 +1,4 @@
-import React, { useEffect, useMemo, useState } from "react";
+import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
   AlertTriangle,
   CalendarDays,
@@ -11,135 +11,13 @@ import {
   Trash2,
   Users,
 } from "lucide-react";
-
-const DAYS = [
-  { id: "monday", short: "Mon", label: "Monday" },
-  { id: "tuesday", short: "Tue", label: "Tuesday" },
-  { id: "wednesday", short: "Wed", label: "Wednesday" },
-  { id: "thursday", short: "Thu", label: "Thursday" },
-  { id: "friday", short: "Fri", label: "Friday" },
-  { id: "saturday", short: "Sat", label: "Saturday" },
-  { id: "sunday", short: "Sun", label: "Sunday" },
-];
-
-const COMPUTERS = [
-  { id: "computer-1", name: "Computer 1" },
-  { id: "computer-2", name: "Computer 2" },
-  { id: "computer-3", name: "Computer 3" },
-  { id: "computer-4", name: "Computer 4" },
-  { id: "computer-5", name: "Computer 5" },
-];
-
-const DEFAULT_STUDENTS = [
-  {
-    id: "student-1",
-    name: "Student 1",
-    preferredComputerId: "computer-1",
-    color: "#006d77",
-  },
-  {
-    id: "student-2",
-    name: "Student 2",
-    preferredComputerId: "computer-2",
-    color: "#1d4ed8",
-  },
-  {
-    id: "student-3",
-    name: "Student 3",
-    preferredComputerId: "computer-3",
-    color: "#b45309",
-  },
-  {
-    id: "student-4",
-    name: "Student 4",
-    preferredComputerId: "computer-4",
-    color: "#6d28d9",
-  },
-  {
-    id: "student-5",
-    name: "Student 5",
-    preferredComputerId: "computer-5",
-    color: "#15803d",
-  },
-  {
-    id: "student-6",
-    name: "Student 6",
-    preferredComputerId: "computer-1",
-    color: "#be123c",
-  },
-  {
-    id: "student-7",
-    name: "Student 7",
-    preferredComputerId: "computer-2",
-    color: "#334155",
-  },
-];
-
-const DEFAULT_SHIFTS = [
-  {
-    id: "shift-1",
-    studentId: "student-1",
-    day: "monday",
-    start: "09:00",
-    end: "13:00",
-  },
-  {
-    id: "shift-2",
-    studentId: "student-2",
-    day: "monday",
-    start: "09:30",
-    end: "14:00",
-  },
-  {
-    id: "shift-3",
-    studentId: "student-3",
-    day: "monday",
-    start: "10:00",
-    end: "15:00",
-  },
-  {
-    id: "shift-4",
-    studentId: "student-4",
-    day: "monday",
-    start: "10:30",
-    end: "15:30",
-  },
-  {
-    id: "shift-5",
-    studentId: "student-5",
-    day: "monday",
-    start: "11:00",
-    end: "16:00",
-  },
-  {
-    id: "shift-6",
-    studentId: "student-6",
-    day: "monday",
-    start: "11:30",
-    end: "14:30",
-  },
-  {
-    id: "shift-7",
-    studentId: "student-1",
-    day: "wednesday",
-    start: "08:00",
-    end: "12:00",
-  },
-  {
-    id: "shift-8",
-    studentId: "student-3",
-    day: "wednesday",
-    start: "12:00",
-    end: "16:00",
-  },
-  {
-    id: "shift-9",
-    studentId: "student-6",
-    day: "friday",
-    start: "09:00",
-    end: "12:30",
-  },
-];
+import {
+  COMPUTERS,
+  DAYS,
+  DEFAULT_STUDENTS,
+  STARTER_PLANNER,
+  normalizePlanner,
+} from "./plannerData.js";
 
 const EMPTY_FORM = {
   studentId: DEFAULT_STUDENTS[0].id,
@@ -148,61 +26,155 @@ const EMPTY_FORM = {
   end: "13:00",
 };
 
-const STORAGE_KEY = "office-computer-planner-v1";
-const STARTER_PLANNER = { students: DEFAULT_STUDENTS, shifts: DEFAULT_SHIFTS };
+const LOCAL_BACKUP_KEY = "office-computer-planner-v1";
+const SYNC_LABELS = {
+  loading: "Loading shared schedule",
+  live: "Live shared schedule",
+  saving: "Saving updates",
+  reconnecting: "Reconnecting",
+  offline: "Offline backup",
+};
 
-function isKnownComputer(computerId) {
-  return COMPUTERS.some((computer) => computer.id === computerId);
+function readLocalBackup() {
+  try {
+    const saved = window.localStorage.getItem(LOCAL_BACKUP_KEY);
+    return saved ? normalizePlanner(JSON.parse(saved)) : null;
+  } catch {
+    return null;
+  }
 }
 
-function normalizePlanner(planner) {
-  const savedStudents = Array.isArray(planner?.students) ? planner.students : [];
-  const savedShifts = Array.isArray(planner?.shifts) ? planner.shifts : DEFAULT_SHIFTS;
-  const savedStudentsById = new Map(savedStudents.map((student) => [student.id, student]));
-
-  const mergedDefaultStudents = DEFAULT_STUDENTS.map((defaultStudent) => {
-    const savedStudent = savedStudentsById.get(defaultStudent.id);
-    if (!savedStudent) return defaultStudent;
-
-    return {
-      ...defaultStudent,
-      ...savedStudent,
-      preferredComputerId: isKnownComputer(savedStudent.preferredComputerId)
-        ? savedStudent.preferredComputerId
-        : defaultStudent.preferredComputerId,
-      color: defaultStudent.color,
-    };
-  });
-
-  const extraStudents = savedStudents.filter(
-    (student) => !DEFAULT_STUDENTS.some((defaultStudent) => defaultStudent.id === student.id),
-  );
-
-  return {
-    students: [...mergedDefaultStudents, ...extraStudents],
-    shifts: savedShifts,
-  };
+function getPlannerFromResponse(payload) {
+  return normalizePlanner(payload?.planner ?? payload);
 }
 
-function useStoredPlanner() {
-  const [planner, setPlanner] = useState(() => {
-    try {
-      const saved = window.localStorage.getItem(STORAGE_KEY);
-      return saved ? normalizePlanner(JSON.parse(saved)) : STARTER_PLANNER;
-    } catch {
-      return STARTER_PLANNER;
-    }
+async function fetchSharedPlanner() {
+  const response = await fetch("/api/planner", {
+    cache: "no-store",
+    headers: { Accept: "application/json" },
   });
+
+  if (!response.ok) {
+    throw new Error("Unable to load shared schedule.");
+  }
+
+  return response.json();
+}
+
+async function putSharedPlanner(planner) {
+  const response = await fetch("/api/planner", {
+    method: "PUT",
+    headers: {
+      Accept: "application/json",
+      "Content-Type": "application/json",
+    },
+    body: JSON.stringify(planner),
+  });
+
+  if (!response.ok) {
+    throw new Error("Unable to save shared schedule.");
+  }
+
+  return response.json();
+}
+
+function useSharedPlanner() {
+  const [planner, setPlannerState] = useState(() => readLocalBackup() ?? STARTER_PLANNER);
+  const [syncStatus, setSyncStatus] = useState("loading");
+  const [sharedLoaded, setSharedLoaded] = useState(false);
+  const saveCounter = useRef(0);
 
   useEffect(() => {
     try {
-      window.localStorage.setItem(STORAGE_KEY, JSON.stringify(planner));
+      window.localStorage.setItem(LOCAL_BACKUP_KEY, JSON.stringify(planner));
     } catch {
-      // The app still works for the current session if storage is blocked.
+      // Shared server storage still works if this browser blocks local backup.
     }
   }, [planner]);
 
-  return [planner, setPlanner];
+  const saveToServer = useCallback(async (nextPlanner) => {
+    const requestId = saveCounter.current + 1;
+    saveCounter.current = requestId;
+    setSyncStatus("saving");
+
+    try {
+      const payload = await putSharedPlanner(nextPlanner);
+      if (requestId === saveCounter.current) {
+        setPlannerState(getPlannerFromResponse(payload));
+        setSyncStatus("live");
+      }
+    } catch {
+      if (requestId === saveCounter.current) {
+        setSyncStatus("offline");
+      }
+    }
+  }, []);
+
+  const setPlanner = useCallback(
+    (updater) => {
+      setPlannerState((current) => {
+        const nextPlanner = normalizePlanner(
+          typeof updater === "function" ? updater(current) : updater,
+        );
+        saveToServer(nextPlanner);
+        return nextPlanner;
+      });
+    },
+    [saveToServer],
+  );
+
+  useEffect(() => {
+    let cancelled = false;
+    const localBackup = readLocalBackup();
+
+    fetchSharedPlanner()
+      .then((payload) => {
+        if (cancelled) return;
+
+        const sharedPlanner = getPlannerFromResponse(payload);
+        if (payload?.created && localBackup) {
+          setPlannerState(localBackup);
+          saveToServer(localBackup);
+        } else {
+          setPlannerState(sharedPlanner);
+          setSyncStatus("live");
+        }
+        setSharedLoaded(true);
+      })
+      .catch(() => {
+        if (!cancelled) {
+          setSyncStatus("offline");
+          setSharedLoaded(true);
+        }
+      });
+
+    return () => {
+      cancelled = true;
+    };
+  }, [saveToServer]);
+
+  useEffect(() => {
+    if (!sharedLoaded || typeof EventSource === "undefined") return undefined;
+
+    const events = new EventSource("/api/planner/events");
+
+    events.onmessage = (event) => {
+      try {
+        setPlannerState(getPlannerFromResponse(JSON.parse(event.data)));
+        setSyncStatus("live");
+      } catch {
+        // Ignore malformed sync events and wait for the next server update.
+      }
+    };
+
+    events.onerror = () => {
+      setSyncStatus((current) => (current === "saving" ? current : "reconnecting"));
+    };
+
+    return () => events.close();
+  }, [sharedLoaded]);
+
+  return [planner, setPlanner, syncStatus];
 }
 
 function createId(prefix) {
@@ -362,7 +334,7 @@ function buildConflictRanges(rows) {
 }
 
 function App() {
-  const [{ students, shifts }, setPlanner] = useStoredPlanner();
+  const [{ students, shifts }, setPlanner, syncStatus] = useSharedPlanner();
   const [selectedDay, setSelectedDay] = useState(DAYS[0].id);
   const [form, setForm] = useState(EMPTY_FORM);
   const [editingShiftId, setEditingShiftId] = useState(null);
@@ -491,6 +463,9 @@ function App() {
           <h1>Office Computer Planner</h1>
         </div>
         <div className="top-actions">
+          <span className={`sync-pill ${syncStatus}`}>
+            {SYNC_LABELS[syncStatus] ?? SYNC_LABELS.loading}
+          </span>
           <button className="button ghost" type="button" onClick={resetPlanner}>
             <RotateCcw size={17} />
             Reset starter
@@ -877,8 +852,7 @@ function App() {
       </main>
 
       <footer className="footer-note">
-        Saved in this browser. Rename the seven students, set their preferred computers, and enter the
-        weekly shifts you supervise.
+        Saved on this shared computer. Everyone connected to this app sees the latest schedule.
       </footer>
     </div>
   );

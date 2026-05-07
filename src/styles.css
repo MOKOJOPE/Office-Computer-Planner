@@ -80,6 +80,39 @@ button:disabled {
   gap: 8px;
 }
 
+.sync-pill {
+  display: inline-flex;
+  align-items: center;
+  min-height: 34px;
+  padding: 7px 10px;
+  border: 1px solid #cfd8e1;
+  border-radius: 999px;
+  background: #ffffff;
+  color: #4c5c6e;
+  font-size: 12px;
+  font-weight: 850;
+}
+
+.sync-pill.live {
+  border-color: #b8ddc9;
+  background: #eefaf3;
+  color: #1f6b43;
+}
+
+.sync-pill.saving,
+.sync-pill.loading,
+.sync-pill.reconnecting {
+  border-color: #d8c58b;
+  background: #fff8df;
+  color: #6b5217;
+}
+
+.sync-pill.offline {
+  border-color: #edb8b1;
+  background: #fff1ef;
+  color: #9b2c24;
+}
+
 .summary-strip {
   display: grid;
   grid-template-columns: repeat(4, minmax(160px, 1fr));

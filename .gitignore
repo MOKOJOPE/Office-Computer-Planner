@@ -5,3 +5,5 @@ dist
 *.local
 vite-dev*.log
 chrome-debug-profile*
+chrome-shared-sync-check*
+data/planner.json
