@@ -35,37 +35,43 @@ const DEFAULT_STUDENTS = [
     id: "student-1",
     name: "Student 1",
     preferredComputerId: "computer-1",
-    color: "#1f7666",
+    color: "#006d77",
   },
   {
     id: "student-2",
     name: "Student 2",
     preferredComputerId: "computer-2",
-    color: "#2563a8",
+    color: "#1d4ed8",
   },
   {
     id: "student-3",
     name: "Student 3",
     preferredComputerId: "computer-3",
-    color: "#a14712",
+    color: "#b45309",
   },
   {
     id: "student-4",
     name: "Student 4",
     preferredComputerId: "computer-4",
-    color: "#6d5d1f",
+    color: "#6d28d9",
   },
   {
     id: "student-5",
     name: "Student 5",
     preferredComputerId: "computer-5",
-    color: "#8b6f19",
+    color: "#15803d",
   },
   {
     id: "student-6",
     name: "Student 6",
     preferredComputerId: "computer-1",
-    color: "#b4234a",
+    color: "#be123c",
+  },
+  {
+    id: "student-7",
+    name: "Student 7",
+    preferredComputerId: "computer-2",
+    color: "#334155",
   },
 ];
 
@@ -143,16 +149,48 @@ const EMPTY_FORM = {
 };
 
 const STORAGE_KEY = "office-computer-planner-v1";
+const STARTER_PLANNER = { students: DEFAULT_STUDENTS, shifts: DEFAULT_SHIFTS };
+
+function isKnownComputer(computerId) {
+  return COMPUTERS.some((computer) => computer.id === computerId);
+}
+
+function normalizePlanner(planner) {
+  const savedStudents = Array.isArray(planner?.students) ? planner.students : [];
+  const savedShifts = Array.isArray(planner?.shifts) ? planner.shifts : DEFAULT_SHIFTS;
+  const savedStudentsById = new Map(savedStudents.map((student) => [student.id, student]));
+
+  const mergedDefaultStudents = DEFAULT_STUDENTS.map((defaultStudent) => {
+    const savedStudent = savedStudentsById.get(defaultStudent.id);
+    if (!savedStudent) return defaultStudent;
+
+    return {
+      ...defaultStudent,
+      ...savedStudent,
+      preferredComputerId: isKnownComputer(savedStudent.preferredComputerId)
+        ? savedStudent.preferredComputerId
+        : defaultStudent.preferredComputerId,
+      color: defaultStudent.color,
+    };
+  });
+
+  const extraStudents = savedStudents.filter(
+    (student) => !DEFAULT_STUDENTS.some((defaultStudent) => defaultStudent.id === student.id),
+  );
+
+  return {
+    students: [...mergedDefaultStudents, ...extraStudents],
+    shifts: savedShifts,
+  };
+}
 
 function useStoredPlanner() {
   const [planner, setPlanner] = useState(() => {
     try {
       const saved = window.localStorage.getItem(STORAGE_KEY);
-      return saved
-        ? JSON.parse(saved)
-        : { students: DEFAULT_STUDENTS, shifts: DEFAULT_SHIFTS };
+      return saved ? normalizePlanner(JSON.parse(saved)) : STARTER_PLANNER;
     } catch {
-      return { students: DEFAULT_STUDENTS, shifts: DEFAULT_SHIFTS };
+      return STARTER_PLANNER;
     }
   });
 
@@ -438,7 +476,7 @@ function App() {
   function resetPlanner() {
     if (!window.confirm("Reset roster and schedules to the starter data?")) return;
 
-    setPlanner({ students: DEFAULT_STUDENTS, shifts: DEFAULT_SHIFTS });
+    setPlanner(STARTER_PLANNER);
     setSelectedDay(DAYS[0].id);
     setForm(EMPTY_FORM);
     setEditingShiftId(null);
@@ -839,7 +877,7 @@ function App() {
       </main>
 
       <footer className="footer-note">
-        Saved in this browser. Rename the six students, set their preferred computers, and enter the
+        Saved in this browser. Rename the seven students, set their preferred computers, and enter the
         weekly shifts you supervise.
       </footer>
     </div>
