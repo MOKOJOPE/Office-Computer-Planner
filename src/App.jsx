@@ -81,8 +81,8 @@ async function putSharedPlanner(planner) {
 function useSharedPlanner() {
   const [planner, setPlannerState] = useState(() => readLocalBackup() ?? STARTER_PLANNER);
   const [syncStatus, setSyncStatus] = useState("loading");
-  const [sharedLoaded, setSharedLoaded] = useState(false);
   const saveCounter = useRef(0);
+  const isSavingRef = useRef(false);
 
   useEffect(() => {
     try {
@@ -92,9 +92,22 @@ function useSharedPlanner() {
     }
   }, [planner]);
 
+  const loadFromServer = useCallback(async () => {
+    try {
+      const payload = await fetchSharedPlanner();
+      setPlannerState(getPlannerFromResponse(payload));
+      setSyncStatus("live");
+      return payload;
+    } catch {
+      setSyncStatus("offline");
+      return null;
+    }
+  }, []);
+
   const saveToServer = useCallback(async (nextPlanner) => {
     const requestId = saveCounter.current + 1;
     saveCounter.current = requestId;
+    isSavingRef.current = true;
     setSyncStatus("saving");
 
     try {
@@ -102,10 +115,12 @@ function useSharedPlanner() {
       if (requestId === saveCounter.current) {
         setPlannerState(getPlannerFromResponse(payload));
         setSyncStatus("live");
+        isSavingRef.current = false;
       }
     } catch {
       if (requestId === saveCounter.current) {
         setSyncStatus("offline");
+        isSavingRef.current = false;
       }
     }
   }, []);
@@ -139,12 +154,10 @@ function useSharedPlanner() {
           setPlannerState(sharedPlanner);
           setSyncStatus("live");
         }
-        setSharedLoaded(true);
       })
       .catch(() => {
         if (!cancelled) {
           setSyncStatus("offline");
-          setSharedLoaded(true);
         }
       });
 
@@ -154,25 +167,14 @@ function useSharedPlanner() {
   }, [saveToServer]);
 
   useEffect(() => {
-    if (!sharedLoaded || typeof EventSource === "undefined") return undefined;
-
-    const events = new EventSource("/api/planner/events");
-
-    events.onmessage = (event) => {
-      try {
-        setPlannerState(getPlannerFromResponse(JSON.parse(event.data)));
-        setSyncStatus("live");
-      } catch {
-        // Ignore malformed sync events and wait for the next server update.
+    const interval = window.setInterval(() => {
+      if (!isSavingRef.current) {
+        loadFromServer();
       }
-    };
+    }, 5000);
 
-    events.onerror = () => {
-      setSyncStatus((current) => (current === "saving" ? current : "reconnecting"));
-    };
-
-    return () => events.close();
-  }, [sharedLoaded]);
+    return () => window.clearInterval(interval);
+  }, [loadFromServer]);
 
   return [planner, setPlanner, syncStatus];
 }
